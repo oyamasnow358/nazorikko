@@ -1103,7 +1103,7 @@
     const chk = (key, label) => h('label', { class: 'row' }, h('span', null, label),
       h('input', { type: 'checkbox', checked: !!S()[key], onchange: e => { S()[key] = e.target.checked; persist(); applyCalm(); } }));
     const vol = h('b', null, ' ' + Math.round(S().volume * 100) + '%');
-    panel.append(
+    panel.appendChild(h('div', null,
       h('div', { class: 'panel-head' }, h('h2', null, '⚙️ 先生用せってい'), h('button', { type: 'button', class: 'btn ok', onclick: closeSettings }, 'とじる')),
       h('p', { class: 'note' }, '右上の ⚙️ を 1.5秒 ながおしで ひらきます。設定は この端末に 保存されます。※ 書き順は はんていしません（どこから なぞっても OK）。'),
       h('h3', null, 'むずかしさ'),
@@ -1133,7 +1133,7 @@
       h('div', { class: 'mieel-foot' },
         h('div', { class: 'mieel-brand' }, h('span', { class: 'orb-mini' }), h('strong', null, 'MieeL'),
           h('a', { href: 'https://www.mieel-support-school.com/', target: '_blank', rel: 'noopener' }, 'www.mieel-support-school.com')),
-        '© なぞりっこ（特別支援教育向け）'));
+        '© なぞりっこ（特別支援教育向け）')));
     m.scrollTop = st;
   }
   function openSettings() { renderSettings(); $('#settings').classList.add('open'); $('#settings').scrollTop = 0; }
