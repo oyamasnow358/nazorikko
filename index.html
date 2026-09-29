@@ -145,7 +145,9 @@
     position: relative; height: 84px; border-radius: 18px; border: 4px solid var(--line); background: #fff;
     font-size: 40px; display: grid; place-items: center; box-shadow: 0 4px 0 var(--line);
   }
-  .lbtn.small { font-size: 22px; }
+  .lbtn { white-space: nowrap; }
+  .lbtn.two { font-size: 30px; letter-spacing: -.04em; }
+  .lbtn.small { font-size: 20px; white-space: normal; line-height: 1.2; padding: 0 4px; }
   .lbtn.cur { border-color: var(--blue); background: #E7F5FF; }
   .lbtn .ok { position: absolute; right: 4px; top: 0; font-size: 18px; color: var(--go); font-family: "M PLUS Rounded 1c", sans-serif; }
   .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
@@ -528,8 +530,10 @@
     const vis = new Uint8Array(img.length);
     const pts = [];
     const near = (x, y, r) => pts.some(p => (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y) < r * r);
+    let comp = -1;
     ends.concat(all).forEach(s => {
       if (vis[s]) return;
+      comp++;
       const stack = [[s, d]];
       while (stack.length) {
         const cur = stack.pop();
@@ -538,7 +542,7 @@
         vis[i] = 1;
         let acc = cur[1];
         const x = i % w, y = (i / w) | 0;
-        if (acc >= d && !near(x, y, d * 0.72)) { pts.push([x, y]); acc = 0; }
+        if (acc >= d && !near(x, y, d * 0.72)) { pts.push([x, y, comp]); acc = 0; }
         for (const j of nb(i)) if (!vis[j]) stack.push([j, acc + ((j % w !== x && ((j / w) | 0) !== y) ? 1.414 : 1)]);
       }
     });
@@ -560,7 +564,7 @@
     for (let y = 0; y < mh; y++) { img[y * mw] = 0; img[y * mw + mw - 1] = 0; }
     thin(img, mw, mh);
     const pts = samplePath(img, mw, mh, layout.d * k);
-    return pts.map(p => ({ x: (p[0] + 0.5) / k, y: (p[1] + 0.5) / k }));
+    return pts.map(p => ({ x: (p[0] + 0.5) / k, y: (p[1] + 0.5) / k, c: p[2] }));
   }
 
   /* ============================================================
@@ -881,7 +885,7 @@
     T.s = L.d * 0.95;
     T.reach = L.d * 0.85 * (Number(S().reach) || 1);
     T.targets = pts.map((p, i) => ({
-      x: p.x, y: p.y, hit: false, t: 0, ph: Math.random() * 6.28,
+      x: p.x, y: p.y, c: p.c, hit: false, t: 0, ph: Math.random() * 6.28,
       color: COLORS[i % COLORS.length], hue: Math.round(i * 330 / Math.max(1, pts.length)),
       emoji: T.theme === 'flower' ? pick(FLOWERS) : pick(FRUITS)
     }));
@@ -949,7 +953,19 @@
     hitSound(T.theme, T.hits - 1);
     if (S().calm && T.theme === 'fruit') { T.basket.n++; }
     else if (!S().calm) spawnHit(T.theme, tg, T.s, T.parts, tg.t, T.basket);
-    if (!T.cleared && T.hits >= Math.ceil(T.targets.length * (Number(S().clear) || 0.9))) doClear();
+    if (!T.cleared && allPartsDone()) doClear();
+  }
+
+  // 文字の パーツ（はなれた線）ごとに、なぞった わりあいを しらべる
+  // → 「きゃ」の「ゃ」や だくてん を なぞらないと クリアに ならない
+  function allPartsDone() {
+    const thr = Number(S().clear) || 0.9;
+    const tot = {}, hit = {};
+    for (const t of T.targets) {
+      tot[t.c] = (tot[t.c] || 0) + 1;
+      if (t.hit) hit[t.c] = (hit[t.c] || 0) + 1;
+    }
+    return Object.keys(tot).every(c => (hit[c] || 0) >= Math.ceil(tot[c] * thr));
   }
 
   function doClear() {
@@ -1054,7 +1070,7 @@
   function openLetterSheet() {
     const done = doneOf(T.mode);
     openSheet('どれを なぞる？', h('div', { class: 'letter-grid' }, T.items.map((it, i) => h('button', {
-      type: 'button', class: 'lbtn kana' + (i === T.idx ? ' cur' : '') + (it.shape || it.label.length > 2 ? ' small' : ''),
+      type: 'button', class: 'lbtn kana' + (i === T.idx ? ' cur' : '') + (it.shape || Array.from(it.label).length > 2 ? ' small' : Array.from(it.label).length === 2 ? ' two' : ''),
       onclick: () => { closeSheet(); goItem(i, true); }
     }, it.label, done[it.key] ? h('span', { class: 'ok' }, '✔') : null))));
   }
