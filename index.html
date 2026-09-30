@@ -661,7 +661,7 @@
   const easeBack = t => { t = Math.min(1, Math.max(0, t)); const s = 1.7; return 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2); };
 
   function drawTarget(c, theme, tg, s, now) {
-    const ph = tg.ph, x = tg.x, y = tg.y, age = now - tg.t;
+    const ph = tg.ph, x = tg.x, y = tg.y, age = Math.max(0, now - tg.t);
     switch (theme) {
       case 'balloon': {
         if (tg.hit) return;
@@ -727,7 +727,9 @@
   function drawPaint(c, targets, s, now) {
     for (const tg of targets) {
       if (!tg.hit) continue;
-      const k = Math.min(1, (now - tg.t) / 220);
+      // フレームの じこくが タッチより すこし まえの ことが あるので 0〜1 に おさめる
+      const k = Math.max(0, Math.min(1, (now - tg.t) / 220));
+      if (k <= 0) continue;
       c.fillStyle = 'hsl(' + tg.hue + ',90%,62%)';
       c.beginPath(); c.arc(tg.x, tg.y, s * 0.62 * k, 0, Math.PI * 2); c.fill();
     }
@@ -773,7 +775,7 @@
   function drawParticles(c, parts, now, dt) {
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i];
-      const age = now - p.born, t = age / p.life;
+      const age = Math.max(0, now - p.born), t = age / p.life;
       if (t >= 1) { if (p.onEnd) p.onEnd(); parts.splice(i, 1); continue; }
       if (p.kind === 'fly') {
         const e = t * t * (3 - 2 * t);
@@ -785,8 +787,8 @@
       }
       p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
       const a = 1 - t;
-      if (p.kind === 'dot') { c.globalAlpha = a; c.fillStyle = p.color; c.beginPath(); c.arc(p.x, p.y, p.size, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; }
-      else if (p.kind === 'ring') { c.globalAlpha = a; c.strokeStyle = p.color; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, p.size * (1 + t), 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1; }
+      if (p.kind === 'dot') { c.globalAlpha = Math.min(1, a); c.fillStyle = p.color; c.beginPath(); c.arc(p.x, p.y, Math.max(0.1, p.size), 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; }
+      else if (p.kind === 'ring') { c.globalAlpha = Math.min(1, a); c.strokeStyle = p.color; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, Math.max(0.1, p.size * (1 + t)), 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1; }
       else if (p.kind === 'emoji') emoji(c, p.text, p.x, p.y, p.size, a);
       else if (p.kind === 'text') {
         c.globalAlpha = a; c.fillStyle = p.color; c.font = '800 ' + Math.round(p.size) + 'px "M PLUS Rounded 1c", sans-serif';
@@ -888,7 +890,8 @@
         h('button', { type: 'button', class: 'round-btn', 'aria-label': 'もういちど', onclick: () => { if (tapOk(400)) { speak('もういちど'); build(); } } }, '🔄'))
     ]);
     bindCanvas(cv);
-    if (!T.raf) T.raf = requestAnimationFrame(frame);
+    T.alive = 0;
+    ensureLoop();
   }
 
   function goItem(i, speakIt) {
@@ -956,7 +959,10 @@
     }
     if (id !== T.buildId || screen !== 'trace') return;
     await new Promise(r => requestAnimationFrame(r));
-    if (!fitCanvas()) return;
+    if (!fitCanvas()) {
+      for (let k = 0; k < 20 && id === T.buildId && screen === 'trace'; k++) { await new Promise(r => setTimeout(r, 150)); if (fitCanvas()) break; }
+      if (id !== T.buildId || screen !== 'trace' || !T.ctx || T.W < 10) return;
+    }
     const L = makeLayout(T.item, T.W, T.H);
     const g = document.createElement('canvas');
     g.width = Math.round(T.W * T.dpr); g.height = Math.round(T.H * T.dpr);
@@ -975,6 +981,10 @@
       emoji: T.theme === 'flower' ? pick(FLOWERS) : pick(FRUITS)
     }));
     T.hits = 0; T.cleared = false; T.strokes = []; T.parts = []; T.active.clear();
+    const tc = document.createElement('canvas');
+    tc.width = g.width; tc.height = g.height;
+    tc.getContext('2d').scale(T.dpr, T.dpr);
+    T.trail = tc;
     T.basket = { x: T.W - T.s * 1.2, y: T.H - T.s * 1.1, n: 0, bump: 0 };
   }
 
@@ -1011,7 +1021,8 @@
       const a = T.active.get(e.pointerId);
       if (!a) return;
       T.active.delete(e.pointerId);
-      if (!S().keepTrail) T.strokes = T.strokes.filter(s => s !== a.stroke);
+      T.strokes = T.strokes.filter(s => s !== a.stroke);
+      if (S().keepTrail && T.trail) drawTrail(T.trail.getContext('2d'), [a.stroke]);
     };
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => cv.addEventListener(ev, end));
     cv.addEventListener('contextmenu', e => e.preventDefault());
@@ -1089,12 +1100,13 @@
   }
 
   /* ---- えがく ---- */
-  function drawTrail(c) {
-    if (!T.strokes.length) return;
+  function drawTrail(c, list) {
+    list = list || T.strokes;
+    if (!list.length) return;
     c.lineCap = 'round'; c.lineJoin = 'round';
     c.lineWidth = T.s * 0.5;
     const tr = THEMES[T.theme].trail;
-    for (const st of T.strokes) {
+    for (const st of list) {
       if (st.length === 1) {
         c.fillStyle = tr === 'rainbow' ? 'hsla(' + st[0].h + ',90%,60%,.45)' : tr;
         c.beginPath(); c.arc(st[0].x, st[0].y, c.lineWidth / 2, 0, Math.PI * 2); c.fill();
@@ -1127,19 +1139,28 @@
 
   function frame(now) {
     if (screen !== 'trace') { T.raf = 0; return; }
+    // さきに つぎの フレームを よやく → とちゅうで エラーが おきても がめんが とまらない
+    T.raf = requestAnimationFrame(frame);
+    T.alive = performance.now();
     const c = T.ctx;
-    if (c && T.guide) {
+    if (c && T.guide) try {
       const dt = Math.min(50, now - (T.last || now));
       T.last = now;
       c.clearRect(0, 0, T.W, T.H);
       c.drawImage(T.guide, 0, 0, T.W, T.H);
-      if (T.theme === 'rainbow') drawPaint(c, T.targets, T.s, now);
+      if (T.trail) c.drawImage(T.trail, 0, 0, T.W, T.H);
       drawTrail(c);
+      // にじいろ：なぞった もじが せんの うえに はっきり いろづく
+      if (T.theme === 'rainbow') drawPaint(c, T.targets, T.s, now);
       for (const tg of T.targets) drawTarget(c, T.theme, tg, T.s, now);
       if (T.theme === 'fruit') drawBasket(c, now);
       drawParticles(c, T.parts, now, dt);
-    }
-    T.raf = requestAnimationFrame(frame);
+    } catch (err) { T.parts = []; if (window.console) console.warn('frame', err); }
+  }
+  // ループが とまっていたら うごかしなおす
+  function ensureLoop() {
+    if (screen !== 'trace') return;
+    if (!T.raf || performance.now() - (T.alive || 0) > 1500) { if (T.raf) cancelAnimationFrame(T.raf); T.raf = requestAnimationFrame(frame); }
   }
 
   /* ---- えらぶ シート ---- */
@@ -1467,6 +1488,12 @@
     document.addEventListener('gesturestart', e => e.preventDefault());
     let rt = null;
     window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (screen === 'trace') build(); else if (screen === 'print') fitPreview(); }, 300); });
+    // ほかの アプリから もどった ときや、iPad が キャンバスを けした ときに かきなおす
+    const revive = () => { if (screen !== 'trace') return; ensureLoop(); const cv = $('#cv'); if (!T.guide || (cv && cv.width === 0) || (T.ctx && T.ctx.isContextLost && T.ctx.isContextLost())) build(); };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(revive, 200); });
+    window.addEventListener('pageshow', () => setTimeout(revive, 200));
+    document.addEventListener('contextrestored', revive, true);
+    setInterval(() => { if (screen === 'trace' && !document.hidden) ensureLoop(); }, 2000);
     // ?print=1 を つけて ひらくと、プリント作成画面から はじまる
     if (/[?&]print=1/.test(location.search)) renderPrint(); else renderHome();
   }
