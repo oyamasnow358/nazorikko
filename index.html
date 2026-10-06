@@ -294,6 +294,11 @@
 <div id="worksheet"></div>
 
 <script>
+function jaSay(t) {
+  // 読み上げで 単語の あたまの「は」「へ」が 助詞（わ・え）と 読まれないように カタカナに する（はこ→ハこ、へや→ヘや）
+  return String(t == null ? '' : t).replace(/なかまはずれ/g, '仲間外れ').replace(/(^|[\s、。！？!?・（(「『])([はへ])(?=[\u3041-\u3096\u30A1-\u30FA\u30FC\u4E00-\u9FFF])/g, function (m, a, c) { return a + (c === 'は' ? 'ハ' : 'ヘ'); });
+}
+
 (function () {
   'use strict';
 
@@ -497,7 +502,7 @@
     if (!canSpeak || !S().voice || !text) return;
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(jaSay(text));
       u.lang = 'ja-JP'; u.rate = 0.9; u.pitch = 1.15;
       if (jaVoice) u.voice = jaVoice;
       speechSynthesis.speak(u);
